@@ -45,15 +45,20 @@ cursor = conn.cursor()
 # --- Dashboard: Inserimento Spese ---
 st.title("Input")
 
+# User selector con radio button nella sidebar
+st.sidebar.radio("", ('Nicola', 'Martina'), key='user')
+
 oggi = datetime.date.today()
+st.write(f"User: {st.session_state.user}")
 
 spese, entrate = st.tabs(["💸 Spese", "💰 Entrate"])
 
 with spese:
     data = st.date_input("Data", oggi)
     euro = st.number_input("Euro", min_value=0.0, step=0.01, format="%.2f")
-    da_ = st.selectbox("Da", ["Nicola", "Martina"])
+    #da_ = st.selectbox("Da", ["Nicola", "Martina"])
     #da_ = st.selectbox("Da", ["Nicola", "Martina"], index=["Nicola", "Martina"].index(st.session_state.user) if st.session_state.user in ["Nicola", "Martina"] else 0)
+    da_ = st.session_state.user
     tipo_categoria = st.radio("Tipo di spesa", ["Necessaria", "Extra"], horizontal=True)
 
     cursor.execute("SELECT nome FROM categorie WHERE tipo = ? ORDER BY id ASC", (tipo_categoria,))
@@ -72,15 +77,16 @@ with spese:
             cursor.execute("""
             INSERT INTO spese (data, euro, da, descrizione, categoria, azione)
             VALUES (?, ?, ?, ?, ?, ?)
-            """, (data.isoformat(), euro, da_, descrizione, categoria, azione))
+            """, (data.strftime("%d/%m/%Y"), euro, da_, descrizione, categoria, azione))
             conn.commit()
-            st.toast("Spesa aggiunta con successo!")
+            st.toast("💸 Spesa inserita!")
 
 
 with entrate:
     data = st.date_input("Data", oggi, key="data_entrate")
     euro = st.number_input("Euro", min_value=0.0, step=0.01, format="%.2f", key="euro_entrate")
-    da_ = st.selectbox("Da", ["Nicola", "Martina"], key="da_entrate")
+    #da_ = st.selectbox("Da", ["Nicola", "Martina"], key="da_entrate")
+    da_ = st.session_state.user
     descrizione = st.text_input("Descrizione", key="descrizione_entrate")
 
     if st.button("Aggiungi Entrata", use_container_width=True, key="btn_entrate"):
@@ -90,6 +96,6 @@ with entrate:
             # cursor.execute("""
             #     INSERT INTO spese (data, euro, da, descrizione, categoria, azione)
             #     VALUES (?, ?, ?, ?, ?, ?)
-            # """, (data.isoformat(), euro, da_, descrizione, categoria, azione))
+            # """, (data.strftime("%d/%m/%Y"), euro, da_, descrizione, categoria, azione))
             # conn.commit()
             st.toast("Entrata aggiunta con successo!")
