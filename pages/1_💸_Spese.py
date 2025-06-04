@@ -4,6 +4,14 @@ import pandas as pd
 from datetime import datetime
 import plotly.express as px
 
+st.markdown("""
+<style>
+div.stButton > button {
+    width: 100%;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("💸 Spese")
 
 # User selector con radio button nella sidebar
@@ -25,6 +33,7 @@ categorie_select = ["Tutte"] + categorie
 # Mese e anno unici per selectbox
 anno_corrente = str(datetime.today().year)
 mese_corrente = datetime.today().month
+azioni_disponibili = ["", "Dividi", "Dai", "Saldo"]
 
 st.write(st.session_state.user)
 
@@ -44,23 +53,19 @@ with elenco:
     
     categoria_sel = st.selectbox("Categoria", categorie_select)
 
+    # Filtro
     df_filtrato = df.copy()
-
     df_filtrato['Categoria'] = df_filtrato['Categoria'].str.capitalize()
 
+    # Filtro mese e anno
     if mese_filtro != "Tutti":
         df_filtrato = df_filtrato[df_filtrato['Data'].dt.month == mese_filtro]
     if anno_sel != "Tutti":
         df_filtrato = df_filtrato[df_filtrato['Data'].dt.year == int(anno_sel)]
     if categoria_sel != "Tutte":
         df_filtrato = df_filtrato[df_filtrato['Categoria'] == categoria_sel]
-    # if utente_sel != "Tutti":
-    #     mask_dividi = df_filtrato['Azione'].str.contains("Dividi", case=False, na=False)
-    #     df_filtrato.loc[mask_dividi, 'Euro'] /= 2
-    #     filtro = (df_filtrato['Da'] == utente_sel) | (
-    #         (df_filtrato['Azione'] == 'Dividi') & (df_filtrato['Da'] != utente_sel)
-    #     )
-    #     df_filtrato = df_filtrato[filtro]
+
+    # Logica divisione spesa
     mask_dividi = df_filtrato['Azione'].str.contains("Dividi", case=False, na=False)
     df_filtrato.loc[mask_dividi, 'Euro'] /= 2
     filtro = (df_filtrato['Da'] == st.session_state.user) | (
@@ -68,26 +73,61 @@ with elenco:
     )
     df_filtrato = df_filtrato[filtro]
 
-    # dati per grafico a torta
-    spese_per_categoria = df_filtrato.groupby("Categoria")["Euro"].sum().reset_index()
-    fig = px.pie(df_filtrato, values='Euro', names='Categoria', title="Spese per Categoria", hole=0.3, color_discrete_sequence=px.colors.qualitative.Pastel)
-    fig.update_traces(textposition='inside', textinfo='percent+label', domain=dict(x=[0, 1], y=[0.1, 1]))
-    fig.update_layout(
-        legend_title_text='Categorie',
-        legend=dict(orientation="h", y=-0.1, x=0.5, xanchor='center', yanchor='top'),
-        margin=dict(t=40, b=0, l=0, r=0),  # margini stretti
-        font=dict(size=14)
-    )
+    # Copia da mostrare, formattata
+    df_mostra = df_filtrato.copy()
+    df_mostra["Euro"] = df_mostra["Euro"].apply(lambda x: f"€ {x:,.2f}")
+    df_mostra['Data'] = df_mostra['Data'].dt.strftime('%-d %B %Y')
 
-    # Formattazione Euro e data
-    df_filtrato["Euro"] = df_filtrato["Euro"].apply(lambda x: f"€ {x:,.2f}")
-    df_filtrato['Data'] = df_filtrato['Data'].dt.strftime('%-d') + ' ' + df_filtrato['Data'].dt.month_name(locale='it_IT.utf8') + ' ' + df_filtrato['Data'].dt.strftime('%Y')
+    # Mostra tabella
+    st.dataframe(df_mostra, hide_index=True, use_container_width=True)
 
-    # Tabella
-    st.dataframe(df_filtrato, hide_index=True, use_container_width=True)
-    # Grafico
+    # Interfaccia modifica/elimina
     if not df_filtrato.empty:
-        st.plotly_chart(fig, use_container_width=True)
+        with st.expander("✏️ Modifica o elimina spesa", expanded=False):
+            record_id = st.selectbox("Seleziona un record da modificare/eliminare", df_filtrato['id'], key="modifica_id")
+            record = df_filtrato[df_filtrato['id'] == record_id].iloc[0]
+
+            # Input dinamici (nessun form)
+            data = st.date_input("Data", pd.to_datetime(record["Data"]), key="data_input")
+            euro = st.number_input("Euro", value=record["Euro"], step=0.01, key="euro_input")
+
+            # Categoria: fix per maiuscola
+            try:
+                idx_cat = categorie.index(record["Categoria"].capitalize())
+            except ValueError:
+                idx_cat = 0
+            categoria = st.selectbox("Categoria", categorie, index=idx_cat, key="categoria_input")
+
+            descrizione = st.text_input("Descrizione", value=record["Descrizione"], key="descrizione_input")
+
+            azione = st.selectbox("Azione", azioni_disponibili, 
+                                index=azioni_disponibili.index(record["Azione"]) if record["Azione"] in azioni_disponibili else 0, 
+                                key="azione_input")
+
+            if azione == "Dividi":
+                div_factor = st.number_input("Fattore di divisione", min_value=0.0, max_value=1.0, step=0.1,
+                                            value=record.get("div_factor", 0.5), format="%.2f", key="div_factor_input")
+            else:
+                div_factor = None
+
+            # Pulsanti
+            col1, col2 = st.columns(2)
+            if col1.button("💾 Salva modifiche"):
+                cursor.execute("""
+                    UPDATE spese SET 
+                        Data = ?, Euro = ?, Categoria = ?, Descrizione = ?, 
+                        Azione = ?, Da = ?, div_factor = ? 
+                    WHERE id = ?
+                """, (str(data.strftime('%d/%m/%Y')), euro, categoria, descrizione, azione, record["Da"], div_factor, record_id))
+                conn.commit()
+                st.success("Modifiche salvate.")
+                st.rerun()
+
+            if col2.button("🗑️ Elimina record"):
+                cursor.execute("DELETE FROM spese WHERE id = ?", (record_id,))
+                conn.commit()
+                st.warning("Record eliminato.")
+                st.rerun()
 
 with mensili:
     if df.empty:
