@@ -68,6 +68,9 @@ with spese:
     descrizione = st.text_input("Descrizione")
     azione = st.selectbox("Azione", ["", "Dividi", "Dai", "Saldo"])
 
+    if azione == "Dividi":
+        fattore_divisione = st.number_input("Fattore di divisione", min_value=0.0, max_value=1.0, step=0.1, value=0.5, format="%.2f")
+
     if st.button("Aggiungi spesa", use_container_width=True):
         if descrizione.strip() == "":
             st.error("Inserisci una descrizione.")
