@@ -46,14 +46,28 @@ cursor = conn.cursor()
 st.title("Input")
 
 # User selector con radio button nella sidebar
-st.sidebar.radio("", ('Nicola', 'Martina'), key='user')
+# Inizializza una volta sola
+if "user" not in st.session_state:
+    st.session_state.user = "Nicola"
+# Mostra il radio nella sidebar, con chiave SEPARATA
+selezione = st.sidebar.radio(
+    "Seleziona utente",
+    options=["Nicola", "Martina"],
+    index=["Nicola", "Martina"].index(st.session_state.user),
+    key="user_radio"
+)
+# Aggiorna lo stato persistente solo se cambia
+if selezione != st.session_state.user:
+    st.session_state.user = selezione
+    st.rerun()
 
 oggi = datetime.date.today()
-st.write(f"User: {st.session_state.user}")
+
 
 spese, entrate = st.tabs(["💸 Spese", "💰 Entrate"])
 
 with spese:
+    st.write(f"Utente: {st.session_state.user}")
     data = st.date_input("Data", oggi)
     euro = st.number_input("Euro", min_value=0.0, step=0.01, format="%.2f")
     #da_ = st.selectbox("Da", ["Nicola", "Martina"])
@@ -67,9 +81,6 @@ with spese:
 
     descrizione = st.text_input("Descrizione")
     azione = st.selectbox("Azione", ["", "Dividi", "Dai", "Saldo"])
-
-    if azione == "Dividi":
-        fattore_divisione = st.number_input("Fattore di divisione", min_value=0.0, max_value=1.0, step=0.1, value=0.5, format="%.2f")
 
     if st.button("Aggiungi spesa", use_container_width=True):
         if descrizione.strip() == "":
@@ -86,6 +97,7 @@ with spese:
 
 
 with entrate:
+    st.write(f"Utente: {st.session_state.user}")
     data = st.date_input("Data", oggi, key="data_entrate")
     euro = st.number_input("Euro", min_value=0.0, step=0.01, format="%.2f", key="euro_entrate")
     #da_ = st.selectbox("Da", ["Nicola", "Martina"], key="da_entrate")
