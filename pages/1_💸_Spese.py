@@ -162,7 +162,7 @@ with statistiche:
             index_anno = anni.index(anno_corrente) + 1 if anno_corrente in anni else 0
             anno_sel_mensili = st.selectbox("Anno", ["Tutti"] + anni, index=index_anno, key="anno_mensile")
         with col2:
-            mese_sel = st.selectbox("Mese", ["Tutti"] + mesi_nomi, index=mese_corrente-1, key="mese_mensile")
+            mese_sel = st.selectbox("Mese", ["Tutti"] + mesi_nomi, index=mese_corrente, key="mese_mensile")
             
         # Carica tutte le categorie con id
         cursor.execute("SELECT id, nome FROM categorie ORDER BY id")
