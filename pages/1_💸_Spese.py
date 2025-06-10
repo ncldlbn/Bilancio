@@ -59,7 +59,7 @@ azioni_disponibili = ["", "Dividi", "Dai", "Saldo"]
 st.write(st.session_state.user)
 
 # Tabs
-elenco, mensili, annuali, overall= st.tabs(["Elenco", "Statistiche Mensili", "Statistiche Annuali", "Statistiche Overall"])
+elenco, statistiche, serie_temporale = st.tabs(["Elenco", "Statistiche", "Serie temporale"])
 
 with elenco:
     # Filtri
@@ -89,9 +89,11 @@ with elenco:
     # Logica divisione spesa
     mask_dividi = df_filtrato['Azione'].str.contains("Dividi", case=False, na=False)
     df_filtrato.loc[mask_dividi, 'Euro'] /= 2
-    filtro = (df_filtrato['Da'] == st.session_state.user) | (
-        (df_filtrato['Azione'] == 'Dividi') & (df_filtrato['Da'] != st.session_state.user)
+    filtro = (
+        ((df_filtrato['Azione'] != 'Saldo') & (df_filtrato['Da'] == st.session_state.user)) | 
+        (df_filtrato['Azione'] == 'Dividi') 
     )
+
     df_filtrato = df_filtrato[filtro]
 
     # Copia da mostrare, formattata
@@ -150,19 +152,18 @@ with elenco:
                 st.warning("Record eliminato.")
                 st.rerun()
 
-with mensili:
+with statistiche:
     if df.empty:
         st.warning("La tabella 'spese' è vuota.")
     else:
         # Filtri
         col1, col2 = st.columns(2)
         with col1:
-            index_anno = anni.index(anno_corrente) if anno_corrente in anni else 0
-            anno_sel_mensili = st.selectbox("Anno", anni, index=index_anno, key="anno_mensile")
+            index_anno = anni.index(anno_corrente) + 1 if anno_corrente in anni else 0
+            anno_sel_mensili = st.selectbox("Anno", ["Tutti"] + anni, index=index_anno, key="anno_mensile")
         with col2:
-            mese_sel = st.selectbox("Mese", mesi_nomi, index=mese_corrente-1, key="mese_mensile")
-            mese_filtro = mesi_valori[mesi_nomi.index(mese_sel)]
-
+            mese_sel = st.selectbox("Mese", ["Tutti"] + mesi_nomi, index=mese_corrente-1, key="mese_mensile")
+            
         # Carica tutte le categorie con id
         cursor.execute("SELECT id, nome FROM categorie ORDER BY id")
         categorie_df = pd.DataFrame(cursor.fetchall(), columns=["id", "Categoria"])
@@ -171,11 +172,14 @@ with mensili:
         # Filtro spese
         df_mensile = df.copy()
         df_mensile['Categoria'] = df_mensile['Categoria'].str.capitalize()
-        df_mensile = df_mensile[df_mensile['Data'].dt.year == int(anno_sel_mensili)]
-        df_mensile = df_mensile[df_mensile['Data'].dt.month == mese_filtro]
-        df_mensile = df_mensile[(df_mensile['Da'] == st.session_state.user) | (
-            (df_mensile['Azione'] == 'Dividi') & (df_mensile['Da'] != st.session_state.user)
-        )]
+        if anno_sel_mensili != 'Tutti':
+            df_mensile = df_mensile[df_mensile['Data'].dt.year == int(anno_sel_mensili)]
+        if mese_sel != 'Tutti':
+            mese_filtro = mesi_valori[mesi_nomi.index(mese_sel)]
+            df_mensile = df_mensile[df_mensile['Data'].dt.month == mese_filtro]
+        df_mensile = df_mensile[((df_mensile['Azione'] != 'Saldo') & (df_mensile['Da'] == st.session_state.user)) | 
+            (df_mensile['Azione'] == 'Dividi')]
+
         df_mensile.loc[df_mensile['Azione'].str.contains("Dividi", case=False, na=False), 'Euro'] /= 2
 
         # Totale per categoria
@@ -226,91 +230,17 @@ with mensili:
         )
 
 
+with serie_temporale:
+    # Filtri
+    index_anno = anni.index(anno_corrente) if anno_corrente in anni else 0
+    anno_sel_overall = st.selectbox("Anno", ['Tutti'] + anni, index=index_anno, key="anno_overall")
 
-with annuali:
-    if df.empty:
-        st.warning("La tabella 'spese' è vuota.")
-    else:
-        # Filtri
-        index_anno = anni.index(anno_corrente) if anno_corrente in anni else 0
-        anno_sel_annuali = st.selectbox("Anno", anni, index=index_anno, key="anno_annuale")
-
-        # Carica tutte le categorie con id
-        cursor.execute("SELECT id, nome FROM categorie ORDER BY id")
-        categorie_df = pd.DataFrame(cursor.fetchall(), columns=["id", "Categoria"])
-        categorie_df["Categoria"] = categorie_df["Categoria"].str.capitalize()
-
-        # Filtro spese
-        df_anno = df.copy()
-        df_anno['Categoria'] = df_anno['Categoria'].str.capitalize()
-        df_anno = df_anno[df_anno['Data'].dt.year == int(anno_sel_annuali)]
-        df_anno = df_anno[(df_anno['Da'] == st.session_state.user) | (
-            (df_anno['Azione'] == 'Dividi') & (df_anno['Da'] != st.session_state.user)
-        )]
-        df_anno.loc[df_anno['Azione'].str.contains("Dividi", case=False, na=False), 'Euro'] /= 2
-
-        # Totale per categoria
-        spese_categoria = df_anno.groupby("Categoria")["Euro"].sum().reset_index()
-        spese_completo = categorie_df.merge(spese_categoria, on="Categoria", how="left")
-        spese_completo["Euro"] = spese_completo["Euro"].fillna(0).round(2)
-
-        # Colori per necessarie (id < 12) e voluttuarie (id >= 12)
-        spese_completo["Colore"] = spese_completo["id"].apply(
-            lambda x: "#8ecae6" if x < 12 else "#ffb703"
-        )
-
-        # Statistiche
-        # TODO inserire anche una statistica sul valore medio mensile per ogni variabile
-        totale = spese_completo["Euro"].sum()
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Totale spese", f"€ {totale:,.2f}")
-
-        # Grafico a barre orizzontali ordinato per id
-        fig_bar = px.bar(
-            spese_completo,
-            y="Categoria",
-            x="Euro",
-            orientation="h",
-            color="Colore",
-            color_discrete_map="identity",
-            text="Euro",
-            title=f"Totale spese per categoria - {mese_sel} {anno_sel}",
-        )
-
-        fig_bar.update_traces(
-            texttemplate="€ %{x:.2f}",  # formato etichette
-            textposition="outside"
-        )
-        fig_bar.update_layout(
-            yaxis=dict(title="", categoryorder="array", categoryarray=spese_completo["Categoria"][::-1]),
-            xaxis=dict(visible=False),
-            showlegend=False,
-            margin=dict(t=40, l=0, r=80, b=0), 
-            font=dict(size=14),
-            height=50 * len(spese_completo) + 100
-        )
-
-        st.plotly_chart(fig_bar, use_container_width=True,
-            config={
-                "staticPlot": True
-            }
-        )
-
-with overall:
-    st.success("Olè")
-    #utente_sel = st.selectbox("Da", utenti, key="utente_overall")
-    # Implementa logica per tutte le spese...
-    st.markdown(
-    """
-    - Aggregazione df spese per anno, mese, categoria
-    - Per ogni categoria, grafico a barre x=mese, y=totale euro per visualizzare l'andamento nel tempo
-    """
-    )
     if df.empty:
         st.warning("La tabella 'spese' è vuota.")
     else:
         df_overall = df.copy()
+        if anno_sel_overall != 'Tutti':
+            df_overall = df_overall[df_overall['Data'].dt.year == int(anno_sel_annuali)]
         df_overall = df_overall[(df_overall['Da'] == st.session_state.user) | (
             (df_overall['Azione'] == 'Dividi') & (df_overall['Da'] != st.session_state.user)
         )]
@@ -324,23 +254,49 @@ with overall:
         # Aggrega le spese mensili per categoria
         spese_categoria_mensile = df_overall.groupby(["DataPeriodo", "Categoria"])["Euro"].sum().reset_index()
 
+        # Dopo aver creato spese_categoria_mensile, genera tutte le combinazioni possibili di DataPeriodo e Categoria
+        all_dates = pd.date_range(
+            start=spese_categoria_mensile["DataPeriodo"].min(),
+            end=spese_categoria_mensile["DataPeriodo"].max(),
+            freq='MS'  # 'MS' = Month Start
+        )
+        all_categories = spese_categoria_mensile["Categoria"].unique()
+
+        # Crea un DataFrame con tutte le combinazioni
+        full_grid = pd.DataFrame([
+            (date, cat) 
+            for date in all_dates 
+            for cat in all_categories
+        ], columns=["DataPeriodo", "Categoria"])
+
+        # Unisci con i dati reali (i mesi senza spese avranno Euro = NaN, poi sostituiti con 0)
+        spese_categoria_mensile_complete = (
+            full_grid.merge(
+                spese_categoria_mensile, 
+                on=["DataPeriodo", "Categoria"], 
+                how="left"
+            )
+            .fillna({"Euro": 0})
+        )
+
         # Loop per ogni categoria e mostrare grafico
-        min_date = spese_categoria_mensile["DataPeriodo"].min()
-        max_date = spese_categoria_mensile["DataPeriodo"].max()
+        min_date = spese_categoria_mensile_complete["DataPeriodo"].min()
+        max_date = spese_categoria_mensile_complete["DataPeriodo"].max()
         for cat in categorie:
-            df_cat = spese_categoria_mensile[spese_categoria_mensile["Categoria"] == cat]
+            df_cat = spese_categoria_mensile_complete[spese_categoria_mensile_complete["Categoria"] == cat]
+
+            
 
             # Calcola statistiche
-            media = df_cat["Euro"].mean()
-            mediana = df_cat["Euro"].median()
-            std = df_cat["Euro"].std()
-
+            if not df_cat["Euro"].empty:
+                media = df_cat["Euro"].mean()
+            else:
+                media = 0
             # Mostra statistiche con formattazione
             st.markdown(f"### {cat}")
             st.markdown(
-                f"- **Media:** € {media:.2f}  \n"
-                f"- **Mediana:** € {mediana:.2f}  \n"
-                f"- **Deviazione standard:** € {std:.2f}"
+                f"- **Totale:** € {df_cat['Euro'].sum():.2f}\n"
+                f"- **Media:** € {media:.2f}"
             )
 
             fig = px.bar(
